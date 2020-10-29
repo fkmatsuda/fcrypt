@@ -20,6 +20,13 @@ function encrypt () {
     openssl smime -encrypt -binary -aes-256-cbc -in $INPUT -out $OUTPUT -outform DER $PROFILE_CONFIG/$PROFILE.certificate.pem
 }
 
+function encrypt-stdin () {
+    declare PROFILE="$1"
+    declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
+    declare OUTPUT="$2"
+    openssl smime -encrypt -binary -aes-256-cbc -out $OUTPUT -outform DER $PROFILE_CONFIG/$PROFILE.certificate.pem
+}
+
 function decrypt () {
     declare PROFILE="$1"
     declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
@@ -56,6 +63,9 @@ function import_config() {
 }
 
 case "$1" in
+    'enc-stdin')
+        encrypt-stdin $2 $3
+        ;;
     'enc')
         encrypt $2 $3 $4
         ;;
@@ -74,6 +84,7 @@ case "$1" in
     *)
         echo
         echo "Usage:"
+        echo "   $0 enc-stdin <profile> <output-file>"
         echo "   $0 enc <profile> <input-file> <output-file>"
         echo "   $0 dec <profile> <input-file> <output-file>"
         echo "   $0 config <profile>"
