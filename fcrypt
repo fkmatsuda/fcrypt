@@ -1,0 +1,87 @@
+#!/bin/bash
+
+CRYPT_CONFIG_PATH=$HOME/.fcrypt
+
+function config() {
+    declare PROFILE="$1"
+    declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
+    mkdir -p $PROFILE_CONFIG
+    chmod 700 $PROFILE_CONFIG
+    openssl req -x509 -days 100000 -newkey rsa:8912 -keyout $PROFILE_CONFIG/$PROFILE.private_key.pem -out $PROFILE_CONFIG/$PROFILE.certificate.pem
+    chmod 600 $PROFILE_CONFIG/$PROFILE.private_key.pem
+    chmod 600 $PROFILE_CONFIG/$PROFILE.certificate.pem
+}
+
+function encrypt () {
+    declare PROFILE="$1"
+    declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
+    declare INPUT="$2"
+    declare OUTPUT="$3"
+    openssl smime -encrypt -binary -aes-256-cbc -in $INPUT -out $OUTPUT -outform DER $PROFILE_CONFIG/$PROFILE.certificate.pem
+}
+
+function decrypt () {
+    declare PROFILE="$1"
+    declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
+    declare INPUT="$2"
+    declare OUTPUT="$3"
+    declare PASSWORD="$4"
+    openssl smime -decrypt -binary -in $INPUT -inform DER -out $OUTPUT -inkey $PROFILE_CONFIG/$PROFILE.private_key.pem -passin pass:$PASSWORD
+}
+
+function export_config() {
+    declare TEMP_DIR=$(mktemp -d -t ci-XXXXXXXXXX)
+    declare PROFILE="$1"
+    declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
+    declare OUTPUT="$2"
+    chmod 700 $TEMP_DIR
+    cp $PROFILE_CONFIG/$PROFILE.private_key.pem $TEMP_DIR/private_key.pem
+    cp $PROFILE_CONFIG/$PROFILE.certificate.pem $TEMP_DIR/certificate.pem
+    echo $(ls $TEMP_DIR/)
+    tar -cjf - -C $TEMP_DIR . | openssl enc -e -aes-256-cbc -md sha512 -pbkdf2 -iter 100000 -salt -out $OUTPUT
+    rm -rf $TEMP_DIR
+}
+
+function import_config() {
+    declare PROFILE="$1"
+    declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
+    declare INPUT="$2"
+    mkdir -p $PROFILE_CONFIG
+    chmod 700 $PROFILE_CONFIG
+    openssl enc -d -aes-256-cbc -md sha512 -pbkdf2 -iter 100000 -salt -in $INPUT | tar -xj -C $PROFILE_CONFIG
+    mv $PROFILE_CONFIG/private_key.pem $PROFILE_CONFIG/$PROFILE.private_key.pem
+    mv $PROFILE_CONFIG/certificate.pem $PROFILE_CONFIG/$PROFILE.certificate.pem
+    chmod 600 $PROFILE_CONFIG/$PROFILE.private_key.pem
+    chmod 600 $PROFILE_CONFIG/$PROFILE.certificate.pem
+}
+
+case "$1" in
+    'enc')
+        encrypt $2 $3 $4
+        ;;
+    'dec')
+        decrypt $2 $3 $4
+        ;;
+    'config')
+        config $2
+        ;;
+    'export-config')
+        export_config $2 $3
+        ;;
+    'import-config')
+        import_config $2 $3
+        ;;
+    *)
+        echo
+        echo "Usage:"
+        echo "   $0 enc <profile> <input-file> <output-file>"
+        echo "   $0 dec <profile> <input-file> <output-file>"
+        echo "   $0 config <profile>"
+        echo "   $0 export-config <profile> <output-file>"
+        echo "   $0 import-config <profile> <input-file>"
+        echo
+        exit 1
+        ;;
+esac
+
+exit 0
