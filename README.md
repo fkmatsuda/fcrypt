@@ -1,3 +1,4 @@
+# fcrypt
 
 A bash script to encrypt/decrypt files with configuration profiles using openssl
 
