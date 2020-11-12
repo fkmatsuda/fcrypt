@@ -13,27 +13,47 @@ function config() {
 }
 
 function encrypt () {
+    declare TEMP_DIR=$(mktemp -d -t ci-XXXXXXXXXX)
     declare PROFILE="$1"
     declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
     declare INPUT="$2"
     declare OUTPUT="$3"
-    openssl smime -encrypt -binary -aes-256-cbc -in $INPUT -out $OUTPUT -outform DER $PROFILE_CONFIG/$PROFILE.certificate.pem
-}
-
-function encrypt-stdin () {
-    declare PROFILE="$1"
-    declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
-    declare OUTPUT="$2"
-    openssl smime -encrypt -binary -aes-256-cbc -out $OUTPUT -outform DER $PROFILE_CONFIG/$PROFILE.certificate.pem
+    chmod 700 $TEMP_DIR
+    echo $KEY | 
+    split -b 1073741824 -a 3 $INPUT $TEMP_DIR/data.
+    for DATA in $TEMP_DIR/data.*
+    do
+        openssl smime -encrypt -binary -aes-256-cbc -in $DATA -out $DATA.enc -outform DER $PROFILE_CONFIG/$PROFILE.certificate.pem
+        rm $DATA
+    done
+    tar -cf $OUTPUT -C $TEMP_DIR .
+    rm -rf $TEMP_DIR
 }
 
 function decrypt () {
+    declare TEMP_DIR=$(mktemp -d -t ci-XXXXXXXXXX)
     declare PROFILE="$1"
     declare PROFILE_CONFIG="$CRYPT_CONFIG_PATH/$PROFILE"
     declare INPUT="$2"
     declare OUTPUT="$3"
-    declare PASSWORD="$4"
-    openssl smime -decrypt -binary -in $INPUT -inform DER -out $OUTPUT -inkey $PROFILE_CONFIG/$PROFILE.private_key.pem -passin pass:$PASSWORD
+    declare KEYPASS="$4"
+
+    if [ -z "$KEYPASS" ] 
+    then
+        echo "Enter key password:"
+        read -s KEYPASS
+    fi
+
+    chmod 700 $TEMP_DIR
+    tar -xf $INPUT -C $TEMP_DIR
+    for ENC in $TEMP_DIR/*.enc
+    do
+        DATA=$(echo "$ENC" | sed -e 's/\.[^.]*$//')
+        openssl smime -decrypt -binary -in $ENC -inform DER -out $DATA -inkey $PROFILE_CONFIG/$PROFILE.private_key.pem -passin pass:"$KEYPASS"
+        rm $ENC
+    done
+    cat $TEMP_DIR/data.* > $OUTPUT
+    rm -rf $TEMP_DIR
 }
 
 function export_config() {
@@ -63,14 +83,11 @@ function import_config() {
 }
 
 case "$1" in
-    'enc-stdin')
-        encrypt-stdin $2 $3
-        ;;
     'enc')
         encrypt $2 $3 $4
         ;;
     'dec')
-        decrypt $2 $3 $4
+        decrypt $2 $3 $4 $5
         ;;
     'config')
         config $2
@@ -84,9 +101,8 @@ case "$1" in
     *)
         echo
         echo "Usage:"
-        echo "   $0 enc-stdin <profile> <output-file>"
         echo "   $0 enc <profile> <input-file> <output-file>"
-        echo "   $0 dec <profile> <input-file> <output-file>"
+        echo "   $0 dec <profile> <input-file> <output-file> <key-password>"
         echo "   $0 config <profile>"
         echo "   $0 export-config <profile> <output-file>"
         echo "   $0 import-config <profile> <input-file>"
